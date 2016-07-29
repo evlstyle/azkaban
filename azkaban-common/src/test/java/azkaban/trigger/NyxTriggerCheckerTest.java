@@ -62,7 +62,7 @@ public class NyxTriggerCheckerTest {
     PowerMockito.verifyStatic();
     NyxUtils.unregisterNyxTrigger(dummyTriggerId);
 
-    PowerMockito.verifyStatic(Mockito.times(2));
+    PowerMockito.verifyStatic(Mockito.times(1));
     NyxUtils.registerNyxTrigger(dummySpec);
   }
 
@@ -92,5 +92,10 @@ public class NyxTriggerCheckerTest {
   @Test
   public void testEval() {
     Assert.assertEquals(true, checker.eval());
+  }
+
+  @Test
+  public void testIsActive() {
+    Assert.assertEquals(true, !checker.isTriggerDisabled());
   }
 }

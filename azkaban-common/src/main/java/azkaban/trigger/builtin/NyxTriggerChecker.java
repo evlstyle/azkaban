@@ -39,11 +39,13 @@ public class NyxTriggerChecker implements ConditionChecker {
   private String id;
   private long triggerId = -1L;
 
-  public NyxTriggerChecker(String specification, String id) {
+  public NyxTriggerChecker(String specification, String id)
+      throws TriggerManagerException {
     this(specification, id, -1);
   }
 
-  public NyxTriggerChecker(String specification, String id, long triggerId) {
+  public NyxTriggerChecker(String specification, String id, long triggerId)
+      throws TriggerManagerException {
     this.specification = specification;
     this.id = id;
 
@@ -53,6 +55,9 @@ public class NyxTriggerChecker implements ConditionChecker {
     // id = -1, this is to make sure the trigger time is correctly populated
     // when user specifies a dynamic trigger time such as yesterDay().
     this.triggerId = triggerId;
+    if (triggerId == -1) {
+      NyxUtils.validateNyxTrigger(specification);
+    }
   }
 
   public long getTriggerId() {
@@ -77,7 +82,7 @@ public class NyxTriggerChecker implements ConditionChecker {
             + id, ex);
       }
     } else {
-      logger.warn("attempted to retrieve staus for an ungistered trigger.");
+      logger.warn("attempted to retrieve status for an ungistered trigger.");
     }
     return returnVal;
   }
@@ -88,8 +93,24 @@ public class NyxTriggerChecker implements ConditionChecker {
       if (triggerId == -1) {
         // if trigger is not registered then first register
         triggerId = NyxUtils.registerNyxTrigger(specification);
+        logger
+            .info("trigger successfully registered with Triggering service. Id = "
+                + triggerId);
       }
       return NyxUtils.isNyxTriggerReady(triggerId);
+    } catch (TriggerManagerException ex) {
+      logger.error("Error while evaluating checker " + id, ex);
+      return false;
+    }
+  }
+
+  public boolean isTriggerDisabled() {
+    try {
+      if (triggerId == -1) {
+        return false; // trigger is not yet registered so it is active.
+      }
+
+      return !NyxUtils.isNyxTriggerActive(triggerId);
     } catch (TriggerManagerException ex) {
       logger.error("Error while evaluating checker " + id, ex);
       return false;
@@ -104,8 +125,14 @@ public class NyxTriggerChecker implements ConditionChecker {
   @Override
   public void reset() {
     try {
+      /**
+       * Note - when resetting the trigger we simply go ahead and unregister it.
+       * Once the trigger is validated again the trigger will be automatically
+       * registered.
+       * **/
+      logger.info(String.format("Resetting triggerId = %s", triggerId));
       NyxUtils.unregisterNyxTrigger(triggerId);
-      triggerId = NyxUtils.registerNyxTrigger(specification);
+      this.triggerId = -1;
     } catch (TriggerManagerException ex) {
       logger.error("Error while resetting checker " + id, ex);
     }

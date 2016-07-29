@@ -189,7 +189,8 @@ public class ScheduleManager implements TriggerAgent {
       final String projectName, final String flowName, final String status,
       final long firstSchedTime, final DateTimeZone timezone,
       final ReadablePeriod period, final long lastModifyTime,
-      final long nextExecTime, final long submitTime, final String submitUser) {
+      final long nextExecTime, final long submitTime, final String submitUser)
+      throws ScheduleManagerException {
     return scheduleFlow(scheduleId, projectId, projectName, flowName, status,
         firstSchedTime, timezone, period, lastModifyTime, nextExecTime,
         submitTime, submitUser, null, null);
@@ -200,7 +201,7 @@ public class ScheduleManager implements TriggerAgent {
       final long firstSchedTime, final DateTimeZone timezone,
       final ReadablePeriod period, final long lastModifyTime,
       final long nextExecTime, final long submitTime, final String submitUser,
-      ExecutionOptions execOptions, List<SlaOption> slaOptions) {
+      ExecutionOptions execOptions, List<SlaOption> slaOptions) throws ScheduleManagerException {
     Schedule sched =
         new Schedule(scheduleId, projectId, projectName, flowName, status,
             firstSchedTime, timezone, period, lastModifyTime, nextExecTime,
@@ -228,21 +229,18 @@ public class ScheduleManager implements TriggerAgent {
    * Adds a flow to the schedule.
    *
    * @param flow
+   * @throws ScheduleManagerException
    */
-  public synchronized void insertSchedule(Schedule s) {
+  public synchronized void insertSchedule(Schedule s) throws ScheduleManagerException {
     Schedule exist = scheduleIdentityPairMap.get(s.getScheduleIdentityPair());
     if (s.updateTime()) {
-      try {
-        if (exist == null) {
-          loader.insertSchedule(s);
-          internalSchedule(s);
-        } else {
-          s.setScheduleId(exist.getScheduleId());
-          loader.updateSchedule(s);
-          internalSchedule(s);
-        }
-      } catch (ScheduleManagerException e) {
-        e.printStackTrace();
+      if (exist == null) {
+        loader.insertSchedule(s);
+        internalSchedule(s);
+      } else {
+        s.setScheduleId(exist.getScheduleId());
+        loader.updateSchedule(s);
+        internalSchedule(s);
       }
     } else {
       logger
