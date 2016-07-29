@@ -23,6 +23,8 @@ import java.util.Map;
 import org.apache.http.NameValuePair;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.log4j.Logger;
+import org.mortbay.log.Log;
+import org.mortbay.util.StringUtil;
 import org.mortbay.util.ajax.JSON;
 
 import azkaban.executor.ExecutorApiClient;
@@ -62,11 +64,14 @@ public class NyxUtils {
       throws TriggerManagerException {
     try {
       ExecutorApiClient client = ExecutorApiClient.getInstance();
-      URI uri =
-          ExecutorApiClient.buildUri(nyxServiceHost, port, "/register", isHttp);
       List<NameValuePair> headers = new ArrayList<>();
       headers.add(new BasicNameValuePair("Content-Type", "application/json"));
+
+      // if we passed the validation, go ahead and register the trigger.
+      URI uri =
+          ExecutorApiClient.buildUri(nyxServiceHost, port, "/register", isHttp);
       String rawResponse = client.httpPost(uri, headers, specificationJson);
+      @SuppressWarnings("unchecked")
       Map<String, Object> parsedResponse =
           (Map<String, Object>) JSON.parse(rawResponse);
 
@@ -80,6 +85,49 @@ public class NyxUtils {
       } else {
         throw new TriggerManagerException("Failed to parse Nyx response "
             + rawResponse);
+      }
+    } catch (Exception ex) {
+      logger.error("Failed to get Nyx service response for :"
+          + specificationJson, ex);
+      throw new TriggerManagerException(ex);
+    }
+  }
+
+  public static void validateNyxTrigger(String specificationJson)
+      throws TriggerManagerException {
+    try {
+      ExecutorApiClient client = ExecutorApiClient.getInstance();
+      List<NameValuePair> headers = new ArrayList<>();
+      headers.add(new BasicNameValuePair("Content-Type", "application/json"));
+      URI uri =
+          ExecutorApiClient.buildUri(nyxServiceHost, port, "/validate", isHttp);
+      String rawResponse = client.httpPost(uri, headers, specificationJson);
+
+      @SuppressWarnings("unchecked")
+      Map<String, Object> parsedResponse =
+          (Map<String, Object>) JSON.parse(rawResponse);
+
+      // short cut if validation failed.
+      if (!parsedResponse.containsKey("valid")
+          || !parsedResponse.get("valid").toString().equalsIgnoreCase("true")) {
+        String errorMsg = "";
+        if (parsedResponse.get("errors") != null) {
+          Object[] msgArr = (Object[]) parsedResponse.get("errors");
+          for (int idx = 0; idx < msgArr.length; idx++) {
+            errorMsg += (String) msgArr[idx];
+          }
+        } else {
+          errorMsg = "NULL";
+        }
+
+        String err =
+            String
+                .format(
+                    "Nyx trigger defination validation falied."
+                        + " The execution can't be scheduled before the issue is fixed or the Nyx trigger is disabled."
+                        + "\n Validation Error : \n %s ", errorMsg);
+        logger.info(err);
+        throw new TriggerManagerException(err);
       }
     } catch (Exception ex) {
       logger.error("Failed to get Nyx service response for :"
@@ -106,11 +154,13 @@ public class NyxUtils {
       URI uri =
           ExecutorApiClient.buildUri(nyxServiceHost, port, "/unregister/"
               + triggerId, isHttp);
-      String response = client.httpGet(uri, null);
+      String response = client.httpDelete(uri, null);
+
+      @SuppressWarnings("unchecked")
       Map<String, Object> parsedResponse =
           (Map<String, Object>) JSON.parse(response);
 
-      if (parsedResponse.containsKey("error")) {
+      if (parsedResponse != null && parsedResponse.containsKey("error")) {
         throw new Exception((String) parsedResponse.get("error"));
       }
     } catch (Exception ex) {
@@ -132,6 +182,44 @@ public class NyxUtils {
     if (triggerId == -1) {
       throw new TriggerManagerException("Trigger is not registered");
     }
+    try {
+      ExecutorApiClient client = ExecutorApiClient.getInstance();
+      URI uri =
+          ExecutorApiClient.buildUri(nyxServiceHost, port, "/status/"
+              + triggerId, isHttp);
+
+      String response = client.httpGet(uri, null);
+      @SuppressWarnings("unchecked")
+      Map<String, Object> parsedResponse =
+          (Map<String, Object>) JSON.parse(response);
+      if (parsedResponse.containsKey("error")) {
+        throw new IllegalArgumentException((String) parsedResponse.get("error"));
+      } else {
+        if (parsedResponse.containsKey("ready")) {
+          return (boolean) parsedResponse.get("ready");
+        } else {
+          throw new Exception("Status missing from Nyx response :" + response);
+        }
+      }
+    } catch (Exception ex) {
+      logger.error("Failed to get Nyx service response for triggerId : "
+          + triggerId, ex);
+      throw new TriggerManagerException(ex);
+    }
+  }
+
+  /**
+   * Look up status of an already registered trigger
+   *
+   * @param triggerId
+   * @return status fetched from Nyx
+   * @throws TriggerManagerException
+   */
+  public static boolean isNyxTriggerActive(Long triggerId)
+      throws TriggerManagerException {
+    if (triggerId == -1) {
+      throw new TriggerManagerException("Trigger is not registered");
+    }
 
     try {
       ExecutorApiClient client = ExecutorApiClient.getInstance();
@@ -139,15 +227,19 @@ public class NyxUtils {
           ExecutorApiClient.buildUri(nyxServiceHost, port, "/status/"
               + triggerId, isHttp);
       String response = client.httpGet(uri, null);
+
+      @SuppressWarnings("unchecked")
       Map<String, Object> parsedResponse =
           (Map<String, Object>) JSON.parse(response);
 
       if (parsedResponse.containsKey("error")) {
         throw new IllegalArgumentException((String) parsedResponse.get("error"));
-      } else if (parsedResponse.containsKey("ready")) {
-        return (boolean) parsedResponse.get("ready");
       } else {
-        throw new Exception("Status missing from Nyx response :" + response);
+        if (parsedResponse.containsKey("active")) {
+          return (boolean) parsedResponse.get("active");
+        } else {
+          throw new Exception("Status missing from Nyx response :" + response);
+        }
       }
     } catch (Exception ex) {
       logger.error("Failed to get Nyx service response for triggerId : "

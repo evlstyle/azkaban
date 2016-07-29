@@ -153,6 +153,7 @@ public abstract class RestfulApiClient<T> {
    *  @return the URI built from the inputs.
    *  @throws IOException
    * */
+  @SafeVarargs
   public static URI buildUri(String host, int port, String path,
       boolean isHttp, Pair<String, String>... params) throws IOException{
     URIBuilder builder = new URIBuilder();
@@ -184,6 +185,7 @@ public abstract class RestfulApiClient<T> {
    *  @return the URI built from the inputs.
    *  @throws IOException
    * */
+  @SafeVarargs
   public static URI BuildUri(URI uri, Pair<String, String>... params) throws IOException{
     URIBuilder builder = new URIBuilder(uri);
 
@@ -228,7 +230,7 @@ public abstract class RestfulApiClient<T> {
       String postingBody) throws UnsupportedEncodingException{
      if (null != completeRequest(request, headerEntries)){
       // dump the post body UTF-8 will be used as the default encoding type.
-      
+
        if (null != postingBody && postingBody.length() > 0){
         HttpEntity entity = new ByteArrayEntity(postingBody.getBytes("UTF-8"));
         request.setEntity(entity);

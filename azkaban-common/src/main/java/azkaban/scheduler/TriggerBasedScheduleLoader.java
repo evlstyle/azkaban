@@ -23,7 +23,6 @@ import java.util.Map;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
-
 import azkaban.executor.ExecutionOptions;
 import azkaban.trigger.Condition;
 import azkaban.trigger.ConditionChecker;
@@ -39,7 +38,6 @@ import azkaban.trigger.builtin.NyxTriggerChecker;
 public class TriggerBasedScheduleLoader implements ScheduleLoader {
 
   public static final String checkerId = "NyxTriggerChecker_1";
-  public static final String expCheckerId = "NyxTriggerChecker_2";
 
   private static Logger logger = Logger
       .getLogger(TriggerBasedScheduleLoader.class);
@@ -56,20 +54,25 @@ public class TriggerBasedScheduleLoader implements ScheduleLoader {
     this.triggerSource = triggerSource;
   }
 
-  private Trigger scheduleToTrigger(Schedule s) {
-    Condition triggerCondition = createTriggerCondition(s);
-    Condition expireCondition = createExpireCondition(s);
-    List<TriggerAction> actions = createActions(s);
-    Trigger t =
-        new Trigger(s.getScheduleId(), s.getLastModifyTime(),
-            s.getSubmitTime(), s.getSubmitUser(), triggerSource,
-            triggerCondition, expireCondition, actions);
-    if (s.isRecurring()) {
-      t.setResetOnTrigger(true);
-    } else {
-      t.setResetOnTrigger(false);
+  private Trigger scheduleToTrigger(Schedule s) throws ScheduleManagerException {
+    try {
+      Condition triggerCondition = createTriggerCondition(s);
+      Condition expireCondition = createExpireCondition(s);
+      addNyxTriggerConditionIfPresents(s, triggerCondition, expireCondition);
+      List<TriggerAction> actions = createActions(s);
+      Trigger t =
+          new Trigger(s.getScheduleId(), s.getLastModifyTime(),
+              s.getSubmitTime(), s.getSubmitUser(), triggerSource,
+              triggerCondition, expireCondition, actions);
+      if (s.isRecurring()) {
+        t.setResetOnTrigger(true);
+      } else {
+        t.setResetOnTrigger(false);
+      }
+      return t;
+    } catch (TriggerManagerException tgrExp) {
+      throw new ScheduleManagerException(tgrExp);
     }
-    return t;
   }
 
   private List<TriggerAction> createActions(Schedule s) {
@@ -83,6 +86,38 @@ public class TriggerBasedScheduleLoader implements ScheduleLoader {
     return actions;
   }
 
+  private void addNyxTriggerConditionIfPresents(Schedule s,
+      Condition triggerCondition, Condition expireCondition)
+      throws TriggerManagerException {
+    if (s != null && triggerCondition != null && expireCondition != null) {
+      Map<String, String> flowParams =
+          s.getExecutionOptions().getFlowParameters();
+      if (flowParams != null
+          && !StringUtils
+              .isEmpty(flowParams.get(ExecutionOptions.TRIGGER_SPEC))) {
+        ConditionChecker nyxChecker =
+            new NyxTriggerChecker(
+                flowParams.get(ExecutionOptions.TRIGGER_SPEC), checkerId);
+        // add the nyx trigger to the triggerCondition.
+        triggerCondition.getCheckers().put(nyxChecker.getId(), nyxChecker);
+        triggerCondition.setCheckers(triggerCondition.getCheckers());
+        String expr = triggerCondition.getExpression();
+        expr =
+            !StringUtils.isEmpty(expr) ? (expr + " && " + nyxChecker.getId() + ".eval() ")
+                : (nyxChecker.getId() + ".eval() ");
+        triggerCondition.setExpression(expr);
+        // add the nyx trigger to the expireCondition.
+        expireCondition.getCheckers().put(nyxChecker.getId(), nyxChecker);
+        expireCondition.setCheckers(expireCondition.getCheckers());
+        expr = expireCondition.getExpression();
+        expr =
+            !StringUtils.isEmpty(expr) ? (expr + " && " + nyxChecker.getId() + ".isTriggerDisabled() ")
+                : (nyxChecker.getId() + ".isTriggerDisabled() ");
+        expireCondition.setExpression(expr);
+      }
+    }
+  }
+
   private Condition createTriggerCondition(Schedule s) {
     Map<String, ConditionChecker> checkers =
         new HashMap<String, ConditionChecker>();
@@ -92,17 +127,6 @@ public class TriggerBasedScheduleLoader implements ScheduleLoader {
             s.getPeriod());
     checkers.put(checker.getId(), checker);
     String expr = checker.getId() + ".eval()";
-
-    Map<String, String> flowParams =
-        s.getExecutionOptions().getFlowParameters();
-    if (flowParams != null
-        && !StringUtils.isEmpty(flowParams.get(ExecutionOptions.TRIGGER_SPEC))) {
-      ConditionChecker nyxChecker =
-          new NyxTriggerChecker(flowParams.get(ExecutionOptions.TRIGGER_SPEC),
-              checkerId);
-      checkers.put(nyxChecker.getId(), nyxChecker);
-      expr = expr + " && " + nyxChecker.getId() + ".eval() ";
-    }
 
     Condition cond = new Condition(checkers, expr);
     return cond;
@@ -118,17 +142,6 @@ public class TriggerBasedScheduleLoader implements ScheduleLoader {
             s.getPeriod());
     checkers.put(checker.getId(), checker);
     String expr = checker.getId() + ".eval()";
-
-    Map<String, String> flowParams =
-        s.getExecutionOptions().getFlowParameters();
-    if (flowParams != null
-        && flowParams.containsKey(ExecutionOptions.TRIGGER_SPEC)) {
-      ConditionChecker nyxChecker =
-          new NyxTriggerChecker(flowParams.get(ExecutionOptions.TRIGGER_SPEC),
-              expCheckerId);
-      checkers.put(nyxChecker.getId(), nyxChecker);
-      expr = expr + " && " + nyxChecker.getId() + ".eval() ";
-    }
 
     Condition cond = new Condition(checkers, expr);
     return cond;
